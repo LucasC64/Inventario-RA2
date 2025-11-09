@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Time (UTCTime, getCurrentTime)
@@ -148,7 +146,7 @@ processarComando cmd inv = do
               putStrLn "ok"
               return invNovo
             Left err -> do
-              adicionarLog (criarLogFalha tempo (EAdd id nm qtd cat) err)
+              adicionarLog (criarLogFalha tempo (EAdd id nm (read qtdStr :: Int) cat) err)
               putStrLn ("erro: " ++ err)
               return inv
         _ -> putStrLn "quantidade invalida" >> return inv
@@ -163,7 +161,7 @@ processarComando cmd inv = do
               putStrLn "ok"
               return invNovo
             Left err -> do
-              adicionarLog (criarLogFalha tempo (ERemove id qtd) err)
+              adicionarLog (criarLogFalha tempo (ERemove id (read qtdStr :: Int)) err)
               putStrLn ("erro: " ++ err)
               return inv
         _ -> putStrLn "quantidade invalida" >> return inv
@@ -178,7 +176,7 @@ processarComando cmd inv = do
               putStrLn "ok"
               return invNovo
             Left err -> do
-              adicionarLog (criarLogFalha tempo (EUpdate id qtd) err)
+              adicionarLog (criarLogFalha tempo (EUpdate id (read qtdStr :: Int)) err)
               putStrLn ("erro: " ++ err)
               return inv
         _ -> putStrLn "quantidade invalida" >> return inv
@@ -197,14 +195,20 @@ processarComando cmd inv = do
 
     ("seed":_) -> do
       tempoNow <- getCurrentTime
-      let exemplos = [ EAdd ("id" ++ show n) ("item " ++ show n) (n*2) "categoria" | n <- [1..10] ]
-          logs = [ LogEntry tempoNow ev ("seed add " ++ show ev) Sucesso | ev <- exemplos ]
-      mapM_ adicionarLog logs
       ls <- carregarLogs
       let invR = reconstruirInventario ls
-      salvarInventario invR
+          novos = [ ev | n <- [1..10]
+                       , let idn = "id" ++ show n
+                       , not (Map.member idn invR)
+                       , let ev = EAdd idn ("item " ++ show n) (n*2) "categoria"
+                 ]
+          logs = [ LogEntry tempoNow ev ("seed add " ++ show ev) Sucesso | ev <- novos ]
+      mapM_ adicionarLog logs
+      ls2 <- carregarLogs
+      let invFinal = reconstruirInventario ls2
+      salvarInventario invFinal
       putStrLn "seed ok"
-      return invR
+      return invFinal
 
     ("report":_) -> do
       logs <- carregarLogs
@@ -271,3 +275,4 @@ main = do
   putStrLn ("itens: " ++ show (Map.size invAtual))
   putStrLn "comandos: add ID \"nome\" qtd \"categoria\" | remove ID qtd | update ID qtd | list | show ID | seed | report | sair"
   loop invAtual
+
