@@ -9,270 +9,185 @@ import Data.Ord (comparing)
 import Data.Char (isSpace)
 import Data.Maybe (mapMaybe)
 
-data Item = Item
-  { itemID    :: String
-  , nome      :: String
-  , quantidade :: Int
-  , categoria :: String
-  } deriving (Show, Read, Eq)
+data Item = Item { itemID :: String, nome :: String, quantidade :: Int, categoria :: String }
+  deriving (Show, Read, Eq)
 
 type Inventario = Map String Item
 
-data Event
-  = EAdd String String Int String
-  | ERemove String Int
-  | EUpdate String Int
+data Event = EAdd String String Int String | ERemove String Int | EUpdate String Int
   deriving (Show, Read, Eq)
 
 data StatusLog = Sucesso | Falha String
   deriving (Show, Read, Eq)
 
-data LogEntry = LogEntry
-  { timestamp :: UTCTime
-  , evento    :: Event
-  , detalhes  :: String
-  , status    :: StatusLog
-  } deriving (Show, Read, Eq)
+data LogEntry = LogEntry { timestamp :: UTCTime, evento :: Event, detalhes :: String, status :: StatusLog }
+  deriving (Show, Read, Eq)
 
 type ResultadoOperacao = (Inventario, LogEntry)
 
 applyEvent :: Inventario -> Event -> Inventario
-applyEvent inv (EAdd id nm qtd cat) =
-  let item = Item id nm qtd cat in Map.insert id item inv
-applyEvent inv (ERemove id qtdRemover) =
-  case Map.lookup id inv of
+applyEvent inv (EAdd i n q c) = Map.insert i (Item i n q c) inv
+applyEvent inv (ERemove i q) =
+  case Map.lookup i inv of
     Nothing -> inv
     Just it ->
-      let nova = quantidade it - qtdRemover
-      in if nova <= 0 then Map.delete id inv else Map.insert id (it { quantidade = nova }) inv
-applyEvent inv (EUpdate id novaQtd) = Map.adjust (\it -> it { quantidade = novaQtd }) id inv
+      let novo = quantidade it - q in if novo <= 0 then Map.delete i inv else Map.insert i (it { quantidade = novo }) inv
+applyEvent inv (EUpdate i q) = Map.adjust (\it -> it { quantidade = q }) i inv
 
 addItem :: UTCTime -> String -> String -> Int -> String -> Inventario -> Either String ResultadoOperacao
-addItem tempo id nm qtd cat inv
-  | Map.member id inv = Left "item ja existe"
-  | qtd < 0           = Left "quantidade nao pode ser negativa"
-  | otherwise =
-      let ev = EAdd id nm qtd cat
-          invNovo = applyEvent inv ev
-          log = LogEntry tempo ev ("adicionou " ++ id) Sucesso
-      in Right (invNovo, log)
+addItem t i n q c inv
+  | Map.member i inv = Left "existe"
+  | q < 0 = Left "qneg"
+  | otherwise = let ev = EAdd i n q c; inv' = applyEvent inv ev; l = LogEntry t ev ("+" ++ i) Sucesso in Right (inv', l)
 
 removeItem :: UTCTime -> String -> Int -> Inventario -> Either String ResultadoOperacao
-removeItem tempo id qtdRemover inv
-  | qtdRemover <= 0 = Left "quantidade a remover deve ser positiva"
+removeItem t i q inv
+  | q <= 0 = Left "q<=0"
   | otherwise =
-    case Map.lookup id inv of
-      Nothing -> Left "item nao encontrado"
-      Just it ->
-        if quantidade it < qtdRemover
-          then Left "estoque insuficiente"
-          else
-            let ev = ERemove id qtdRemover
-                invNovo = applyEvent inv ev
-                log = LogEntry tempo ev ("removeu " ++ show qtdRemover ++ " de " ++ id) Sucesso
-            in Right (invNovo, log)
+    case Map.lookup i inv of
+      Nothing -> Left "nao-encontrado"
+      Just it -> if quantidade it < q then Left "estoque" else let ev = ERemove i q; inv' = applyEvent inv ev; l = LogEntry t ev ("-" ++ i) Sucesso in Right (inv', l)
 
 updateQty :: UTCTime -> String -> Int -> Inventario -> Either String ResultadoOperacao
-updateQty tempo id novaQtd inv
-  | novaQtd < 0 = Left "quantidade invalida"
+updateQty t i q inv
+  | q < 0 = Left "qneg"
   | otherwise =
-    case Map.lookup id inv of
-      Nothing -> Left "item nao existe"
-      Just _ ->
-        let ev = EUpdate id novaQtd
-            invNovo = applyEvent inv ev
-            log = LogEntry tempo ev ("atualizou " ++ id ++ " para " ++ show novaQtd) Sucesso
-        in Right (invNovo, log)
+    case Map.lookup i inv of
+      Nothing -> Left "nao-encontrado"
+      Just _ -> let ev = EUpdate i q; inv' = applyEvent inv ev; l = LogEntry t ev ("=" ++ i) Sucesso in Right (inv', l)
 
 reconstruirInventario :: [LogEntry] -> Inventario
-reconstruirInventario logs =
-  let eventosSucesso = [ evento l | l <- logs, case status l of Sucesso -> True; _ -> False ]
-  in foldl applyEvent Map.empty eventosSucesso
+reconstruirInventario logs = foldl applyEvent Map.empty [ evento x | x <- logs, case status x of Sucesso -> True; _ -> False ]
 
-inventarioFile :: FilePath
+inventarioFile, logFile :: FilePath
 inventarioFile = "Inventario.dat"
-
-logFile :: FilePath
 logFile = "Auditoria.log"
 
 carregarInventario :: IO Inventario
 carregarInventario = do
-  existe <- doesFileExist inventarioFile
-  if not existe then return Map.empty
-  else do
-    conteudo <- readFile inventarioFile `catch` (\(_ :: IOException) -> return "fromList []")
-    return (read conteudo :: Inventario)
+  ok <- doesFileExist inventarioFile
+  if not ok then return Map.empty else do
+    c <- readFile inventarioFile `catch` (\(_ :: IOException) -> return "fromList []")
+    return (read c :: Inventario)
 
 carregarLogs :: IO [LogEntry]
 carregarLogs = do
-  existe <- doesFileExist logFile
-  if not existe then return []
-  else do
-    conteudo <- readFile logFile `catch` (\(_ :: IOException) -> return "")
-    let linhas = filter (not . all isSpace) (lines conteudo)
-        safeRead l = case reads l of [(v, "")] -> Just (v :: LogEntry); _ -> Nothing
-    return (mapMaybe safeRead linhas)
+  ok <- doesFileExist logFile
+  if not ok then return [] else do
+    c <- readFile logFile `catch` (\(_ :: IOException) -> return "")
+    let ls = filter (not . all isSpace) (lines c)
+        safe l = case reads l of [(v, "")] -> Just (v :: LogEntry); _ -> Nothing
+    return (mapMaybe safe ls)
 
 salvarInventario :: Inventario -> IO ()
 salvarInventario inv = writeFile inventarioFile (show inv)
 
 adicionarLog :: LogEntry -> IO ()
-adicionarLog entry = appendFile logFile (show entry ++ "\n")
+adicionarLog e = appendFile logFile (show e ++ "\n")
 
 criarLogFalha :: UTCTime -> Event -> String -> LogEntry
-criarLogFalha tempo ev msg = LogEntry tempo ev msg (Falha msg)
+criarLogFalha t ev msg = LogEntry t ev msg (Falha msg)
 
 tokenize :: String -> [String]
-tokenize = go . dropWhile isSpace
-  where
-    go "" = []
-    go ('"':xs) = let (inside, rest) = span (/= '"') xs
-                      rest' = drop 1 rest
-                  in inside : go (dropWhile isSpace rest')
-    go s = let (tok, rest) = break isSpace s in tok : go (dropWhile isSpace rest)
+tokenize = go . dropWhile isSpace where
+  go "" = []
+  go ('"':xs) = let (a, r) = span (/= '"') xs in a : go (dropWhile isSpace (drop 1 r))
+  go s = let (tok, r) = break isSpace s in tok : go (dropWhile isSpace r)
 
 processarComando :: [String] -> Inventario -> IO Inventario
-processarComando cmd inv = do
-  tempo <- getCurrentTime
-  case cmd of
-    ("add":id:nm:qtdStr:catParts) ->
-      let cat = unwords catParts in
-      case reads qtdStr of
-        [(qtd, "")] ->
-          case addItem tempo id nm qtd cat inv of
-            Right (invNovo, log) -> do
-              adicionarLog log
-              salvarInventario invNovo
-              putStrLn "ok"
-              return invNovo
-            Left err -> do
-              adicionarLog (criarLogFalha tempo (EAdd id nm (read qtdStr :: Int) cat) err)
-              putStrLn ("erro: " ++ err)
-              return inv
-        _ -> putStrLn "quantidade invalida" >> return inv
+processarComando parts inv = do
+  t <- getCurrentTime
+  case parts of
+    ("add":i:n:qParts) -> let qStr = headDef "" qParts; name = headDef "" [n]; cat = unwords (tailDef [] qParts) in
+      case reads qStr of
+        [(q, "")] -> case addItem t i name q cat inv of
+          Right (inv', l) -> adicionarLog l >> salvarInventario inv' >> putStrLn "feito" >> return inv'
+          Left err -> adicionarLog (criarLogFalha t (EAdd i name (readDef 0 qStr) cat) err) >> putStrLn ("falha:" ++ err) >> return inv
+        _ -> putStrLn "falha:q" >> return inv
 
-    ("remove":id:qtdStr:_) ->
-      case reads qtdStr of
-        [(qtd, "")] ->
-          case removeItem tempo id qtd inv of
-            Right (invNovo, log) -> do
-              adicionarLog log
-              salvarInventario invNovo
-              putStrLn "ok"
-              return invNovo
-            Left err -> do
-              adicionarLog (criarLogFalha tempo (ERemove id (read qtdStr :: Int)) err)
-              putStrLn ("erro: " ++ err)
-              return inv
-        _ -> putStrLn "quantidade invalida" >> return inv
+    ("remove":i:qStr:_) ->
+      case reads qStr of
+        [(q, "")] -> case removeItem t i q inv of
+          Right (inv', l) -> adicionarLog l >> salvarInventario inv' >> putStrLn "feito" >> return inv'
+          Left err -> adicionarLog (criarLogFalha t (ERemove i (readDef 0 qStr)) err) >> putStrLn ("falha:" ++ err) >> return inv
+        _ -> putStrLn "falha:q" >> return inv
 
-    ("update":id:qtdStr:_) ->
-      case reads qtdStr of
-        [(qtd, "")] ->
-          case updateQty tempo id qtd inv of
-            Right (invNovo, log) -> do
-              adicionarLog log
-              salvarInventario invNovo
-              putStrLn "ok"
-              return invNovo
-            Left err -> do
-              adicionarLog (criarLogFalha tempo (EUpdate id (read qtdStr :: Int)) err)
-              putStrLn ("erro: " ++ err)
-              return inv
-        _ -> putStrLn "quantidade invalida" >> return inv
+    ("update":i:qStr:_) ->
+      case reads qStr of
+        [(q, "")] -> case updateQty t i q inv of
+          Right (inv', l) -> adicionarLog l >> salvarInventario inv' >> putStrLn "feito" >> return inv'
+          Left err -> adicionarLog (criarLogFalha t (EUpdate i (readDef 0 qStr)) err) >> putStrLn ("falha:" ++ err) >> return inv
+        _ -> putStrLn "falha:q" >> return inv
 
     ("list":_) -> do
-      let itens = Map.elems inv
-          ordenados = sortOn itemID itens
-      mapM_ (\i -> putStrLn (itemID i ++ " - " ++ nome i ++ " (" ++ show (quantidade i) ++ ")")) ordenados
+      let xs = sortOn itemID (Map.elems inv)
+      mapM_ (\it -> putStrLn (itemID it ++ " | " ++ nome it ++ " : " ++ show (quantidade it))) xs
       return inv
 
-    ("show":id:_) -> do
-      case Map.lookup id inv of
-        Nothing -> putStrLn "item nao encontrado"
-        Just it -> putStrLn (show it)
-      return inv
+    ("show":i:_) -> putStrLn (maybe "nao" show (Map.lookup i inv)) >> return inv
 
     ("seed":_) -> do
-      tempoNow <- getCurrentTime
+      t0 <- getCurrentTime
       ls <- carregarLogs
       let invR = reconstruirInventario ls
-          novos = [ ev | n <- [1..10]
-                       , let idn = "id" ++ show n
-                       , not (Map.member idn invR)
-                       , let ev = EAdd idn ("item " ++ show n) (n*2) "categoria"
-                 ]
-          logs = [ LogEntry tempoNow ev ("seed add " ++ show ev) Sucesso | ev <- novos ]
+          novos = [ EAdd ("id" ++ show n) ("item" ++ show n) (n*2) "cat" | n <- [1..10], not (Map.member ("id" ++ show n) invR) ]
+          logs = [ LogEntry t0 ev ("seed") Sucesso | ev <- novos ]
       mapM_ adicionarLog logs
       ls2 <- carregarLogs
-      let invFinal = reconstruirInventario ls2
-      salvarInventario invFinal
-      putStrLn "seed ok"
-      return invFinal
+      let inv2 = reconstruirInventario ls2
+      salvarInventario inv2
+      putStrLn "seed feito"
+      return inv2
 
     ("report":_) -> do
-      logs <- carregarLogs
-      mapM_ putStrLn (historicoPorItem logs)
-      mapM_ print (logsDeErro logs)
-      putStrLn (itemMaisMovimentado logs)
+      ls <- carregarLogs
+      mapM_ putStrLn (historicoPorItem ls)
+      mapM_ print (logsDeErro ls)
+      putStrLn (itemMaisMovimentado ls)
       return inv
 
-    ("sair":_) -> do
-      putStrLn "tchau"
-      return inv
+    ("sair":_) -> putStrLn "tchau" >> return inv
+    _ -> putStrLn "?" >> return inv
 
-    _ -> do
-      putStrLn "comando desconhecido"
-      return inv
+headDef :: a -> [a] -> a
+headDef d [] = d
+headDef _ (x:_) = x
+
+tailDef :: [a] -> [a] -> [a]
+tailDef d [] = d
+tailDef _ (_:xs) = xs
+
+readDef :: Read a => a -> String -> a
+readDef d s = case reads s of [(v,"")] -> v; _ -> d
 
 historicoPorItem :: [LogEntry] -> [String]
-historicoPorItem logs =
-  let ids = concatMap extraiID logs
-      groups = map (\g -> (head g, length g)) . group . sortOn id $ ids
-  in map (\(i,n) -> i ++ ": " ++ show n ++ " eventos") groups
-  where
-    extraiID l = case evento l of
-      EAdd id _ _ _ -> [id]
-      ERemove id _  -> [id]
-      EUpdate id _  -> [id]
+historicoPorItem logs = let ids = concatMap extrai logs; groups = map (\g -> (head g, length g)) . group . sortOn id $ ids in map (\(i,n)-> i ++ ":" ++ show n) groups
+  where extrai l = case evento l of EAdd i _ _ _ -> [i]; ERemove i _ -> [i]; EUpdate i _ -> [i]
 
 logsDeErro :: [LogEntry] -> [LogEntry]
 logsDeErro = filter (\l -> case status l of Falha _ -> True; _ -> False)
 
 itemMaisMovimentado :: [LogEntry] -> String
-itemMaisMovimentado logs =
-  let ids = concatMap extraiID logs
-  in if null ids then "nenhum item"
-     else let grouped = map (\g -> (head g, length g)) . group . sortOn id $ ids
-              (idMax, cnt) = maximumBy (comparing snd) grouped
-          in idMax ++ " (" ++ show cnt ++ " eventos)"
-  where
-    extraiID l = case evento l of
-      EAdd id _ _ _ -> [id]
-      ERemove id _  -> [id]
-      EUpdate id _  -> [id]
+itemMaisMovimentado logs = let ids = concatMap (\l -> case evento l of EAdd i _ _ _ -> [i]; ERemove i _ -> [i]; EUpdate i _ -> [i]) logs in if null ids then "nenhum" else let g = map (\grp -> (head grp, length grp)) . group . sortOn id $ ids; (i,c) = maximumBy (comparing snd) g in i ++ "(" ++ show c ++ ")"
 
 loop :: Inventario -> IO ()
 loop inv = do
   putStr "> "
   hFlush stdout
-  linha <- getLine
-  let cmd = tokenize linha
-  if null cmd || head cmd == "sair"
-    then putStrLn "encerrando..."
-    else do
-      invNovo <- processarComando cmd inv
-      loop invNovo
+  l <- getLine
+  let p = tokenize l
+  if null p || head p == "sair" then putStrLn "bye" else do
+    inv' <- processarComando p inv
+    loop inv'
 
 main :: IO ()
 main = do
-  putStrLn "carregando sistema..."
+  putStrLn "iniciando..."
   logs <- carregarLogs
-  let invFromLog = reconstruirInventario logs
-  _ <- carregarInventario
-  let invAtual = invFromLog
-  salvarInventario invAtual
-  putStrLn ("itens: " ++ show (Map.size invAtual))
-  putStrLn "comandos: add ID \"nome\" qtd \"categoria\" | remove ID qtd | update ID qtd | list | show ID | seed | report | sair"
-  loop invAtual
+  let inv = reconstruirInventario logs
+  salvarInventario inv
+  putStrLn ("itens:" ++ show (Map.size inv))
+  putStrLn "uso: add ID NOME QTD CAT | remove ID QTD | update ID QTD | list | show ID | seed | report | sair"
+  loop inv
+
 
