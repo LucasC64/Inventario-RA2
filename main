@@ -1,0 +1,311 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as M
+import Data.Time (UTCTime, getCurrentTime)
+import System.IO (hFlush, stdout)
+import System.Directory (doesFileExist)
+import Control.Exception (catch, IOException)
+import Data.List (foldl', sortBy, groupBy)
+import Data.Ord (comparing)
+import Data.Char (isSpace)
+import Control.Monad (when)
+
+newtype ItemID = ItemID { getID :: String } 
+  deriving (Show, Read, Eq, Ord)
+
+data Item = Item 
+  { itemID :: ItemID
+  , nome :: String
+  , quantidade :: Int
+  , categoria :: String
+  } deriving (Show, Read, Eq)
+
+type Inventario = Map ItemID Item
+
+data AcaoLog 
+  = Add ItemID String Int String
+  | Remove ItemID Int
+  | Update ItemID Int
+  deriving (Show, Read, Eq)
+
+data StatusLog = Sucesso | Falha String 
+  deriving (Show, Read, Eq)
+
+data LogEntry = LogEntry 
+  { timestamp :: UTCTime
+  , acao :: AcaoLog
+  , detalhes :: String
+  , status :: StatusLog
+  } deriving (Show, Read, Eq)
+
+type ResultadoOperacao = (Inventario, LogEntry)
+
+validaQuantidade :: Int -> Either String Int
+validaQuantidade q
+  | q < 0 = Left "quantidade negativa"
+  | otherwise = Right q
+
+validaQuantidadePositiva :: Int -> Either String Int
+validaQuantidadePositiva q
+  | q <= 0 = Left "quantidade deve ser maior que zero"
+  | otherwise = Right q
+
+buscaItem :: ItemID -> Inventario -> Either String Item
+buscaItem id inv = 
+  case M.lookup id inv of
+    Nothing -> Left "item nao encontrado"
+    Just it -> Right it
+
+verificaItemNovo :: ItemID -> Inventario -> Either String ()
+verificaItemNovo id inv
+  | M.member id inv = Left "item ja existe"
+  | otherwise = Right ()
+
+aplicaEvento :: AcaoLog -> Inventario -> Inventario
+aplicaEvento (Add id n q c) inv = M.insert id (Item id n q c) inv
+aplicaEvento (Remove id q) inv = 
+  case M.lookup id inv of
+    Nothing -> inv
+    Just item ->
+      let novaQtd = quantidade item - q
+      in if novaQtd <= 0 
+         then M.delete id inv 
+         else M.insert id (item { quantidade = novaQtd }) inv
+aplicaEvento (Update id q) inv = 
+  M.adjust (\item -> item { quantidade = q }) id inv
+
+addItem :: UTCTime -> ItemID -> String -> Int -> String -> Inventario -> Either String ResultadoOperacao
+addItem t id n q c inv = do
+  verificaItemNovo id inv
+  validaQuantidade q
+  let evento = Add id n q c
+  let novoInv = aplicaEvento evento inv
+  let log = LogEntry t evento ("adicionado: " ++ getID id) Sucesso
+  return (novoInv, log)
+
+removeItem :: UTCTime -> ItemID -> Int -> Inventario -> Either String ResultadoOperacao
+removeItem t id q inv = do
+  validaQuantidadePositiva q
+  item <- buscaItem id inv
+  if quantidade item < q
+    then Left "estoque insuficiente"
+    else do
+      let evento = Remove id q
+      let novoInv = aplicaEvento evento inv
+      let log = LogEntry t evento ("removido: " ++ getID id) Sucesso
+      return (novoInv, log)
+
+updateItem :: UTCTime -> ItemID -> Int -> Inventario -> Either String ResultadoOperacao
+updateItem t id q inv = do
+  validaQuantidade q
+  buscaItem id inv
+  let evento = Update id q
+  let novoInv = aplicaEvento evento inv
+  let log = LogEntry t evento ("atualizado: " ++ getID id) Sucesso
+  return (novoInv, log)
+
+reconstruirInventario :: [LogEntry] -> Inventario
+reconstruirInventario logs = foldl' aplicaLog M.empty logs
+  where
+    aplicaLog inv (LogEntry _ ev _ Sucesso) = aplicaEvento ev inv
+    aplicaLog inv _ = inv
+
+arquivoInventario, arquivoLog :: FilePath
+arquivoInventario = "Inventario.dat"
+arquivoLog = "Auditoria.log"
+
+carregarInventario :: IO Inventario
+carregarInventario = do
+  existe <- doesFileExist arquivoInventario
+  if not existe 
+    then return M.empty
+    else catch (read <$> readFile arquivoInventario) trataErro
+  where trataErro (_ :: IOException) = return M.empty
+
+carregarLogs :: IO [LogEntry]
+carregarLogs = do
+  existe <- doesFileExist arquivoLog
+  if not existe
+    then return []
+    else catch (parseLinhas <$> readFile arquivoLog) trataErro
+  where 
+    trataErro (_ :: IOException) = return []
+    parseLinhas conteudo = 
+      let linhas = lines conteudo
+      in foldr tentaLer [] linhas
+    tentaLer linha acc = 
+      case reads linha of
+        [(entrada, "")] -> entrada : acc
+        _ -> acc
+
+salvarInventario :: Inventario -> IO ()
+salvarInventario inv = writeFile arquivoInventario (show inv)
+
+adicionarLog :: LogEntry -> IO ()
+adicionarLog entrada = appendFile arquivoLog (show entrada ++ "\n")
+
+criarLogFalha :: UTCTime -> AcaoLog -> String -> LogEntry
+criarLogFalha t evento msg = LogEntry t evento msg (Falha msg)
+
+parseComando :: String -> [String]
+parseComando entrada = reverse (separaPalavras [] (dropWhile isSpace entrada))
+  where
+    separaPalavras acc [] = acc
+    separaPalavras acc ('"':resto) = 
+      let (palavra, sobra) = span (/= '"') resto
+      in separaPalavras (palavra:acc) (dropWhile isSpace (drop 1 sobra))
+    separaPalavras acc texto = 
+      let (palavra, sobra) = break isSpace texto
+      in separaPalavras (palavra:acc) (dropWhile isSpace sobra)
+
+processarComando :: [String] -> Inventario -> IO Inventario
+processarComando partes inv = do
+  agora <- getCurrentTime
+  case partes of
+    ("add":idStr:nomeStr:qtdStr:resto) -> 
+      case reads qtdStr of
+        [(qtd, "")] -> 
+          let id = ItemID idStr
+              cat = unwords resto
+              resultado = addItem agora id nomeStr qtd cat inv
+          in executarOperacao agora resultado inv
+        _ -> putStrLn "erro: quantidade invalida" >> return inv
+    
+    ("remove":idStr:qtdStr:_) -> 
+      case reads qtdStr of
+        [(qtd, "")] ->
+          let id = ItemID idStr
+              resultado = removeItem agora id qtd inv
+          in executarOperacao agora resultado inv
+        _ -> putStrLn "erro: quantidade invalida" >> return inv
+    
+    ("update":idStr:qtdStr:_) -> 
+      case reads qtdStr of
+        [(qtd, "")] ->
+          let id = ItemID idStr
+              resultado = updateItem agora id qtd inv
+          in executarOperacao agora resultado inv
+        _ -> putStrLn "erro: quantidade invalida" >> return inv
+    
+    ("list":_) -> listarItens inv >> return inv
+    ("show":idStr:_) -> mostrarItem idStr inv >> return inv
+    ("seed":_) -> popularDados
+    ("report":_) -> gerarRelatorio >> return inv
+    ("sair":_) -> putStrLn "encerrando programa..." >> return inv
+    _ -> putStrLn "comando desconhecido" >> return inv
+
+executarOperacao :: UTCTime -> Either String ResultadoOperacao -> Inventario -> IO Inventario
+executarOperacao agora (Right (novoInv, log)) inv = do
+  adicionarLog log
+  salvarInventario novoInv
+  putStrLn "operacao realizada com sucesso"
+  return novoInv
+
+executarOperacao agora (Left mensagemErro) inv = do
+  let eventoFalho = Add (ItemID "") "" 0 ""
+      log = criarLogFalha agora eventoFalho mensagemErro
+  adicionarLog log
+  putStrLn $ "erro: " ++ mensagemErro
+  return inv
+
+listarItens :: Inventario -> IO ()
+listarItens inv = do
+  let itens = sortBy (comparing itemID) (M.elems inv)
+  mapM_ mostrar itens
+  where
+    mostrar item = putStrLn $ 
+      getID (itemID item) ++ " | " ++ 
+      nome item ++ " | qtd: " ++ 
+      show (quantidade item) ++ 
+      " | cat: " ++ categoria item
+
+mostrarItem :: String -> Inventario -> IO ()
+mostrarItem idStr inv = 
+  case M.lookup (ItemID idStr) inv of
+    Nothing -> putStrLn "item nao encontrado"
+    Just item -> print item
+
+popularDados :: IO Inventario
+popularDados = do
+  agora <- getCurrentTime
+  logs <- carregarLogs
+  let invAtual = reconstruirInventario logs
+      idsNovos = [ItemID ("item" ++ show n) | n <- [1..10], 
+                  not (M.member (ItemID ("item" ++ show n)) invAtual)]
+      eventos = [Add id ("produto " ++ drop 4 (getID id)) 
+                     (read (drop 4 (getID id)) * 5) ("categoria" ++ show ((read (drop 4 (getID id)) `mod` 3) + 1))
+                | id <- idsNovos]
+      entradas = [LogEntry agora ev "dados iniciais" Sucesso | ev <- eventos]
+  mapM_ adicionarLog entradas
+  logsNovos <- carregarLogs
+  let invNovo = reconstruirInventario logsNovos
+  salvarInventario invNovo
+  putStrLn "dados populados com sucesso"
+  return invNovo
+
+gerarRelatorio :: IO ()
+gerarRelatorio = do
+  logs <- carregarLogs
+  putStrLn "\n Relatorio de Operacoes"
+  putStrLn "\nHistorico por item:"
+  mapM_ putStrLn (historicoPorItem logs)
+  putStrLn "\nLogs de erro:"
+  mapM_ print (logsDeErro logs)
+  putStrLn "\nItem mais movimentado:"
+  putStrLn (itemMaisMovimentado logs)
+  putStrLn ""
+
+extrairItemID :: LogEntry -> [ItemID]
+extrairItemID (LogEntry _ ev _ _) = 
+  case ev of
+    Add id _ _ _ -> [id]
+    Remove id _ -> [id]
+    Update id _ -> [id]
+
+agruparEContar :: Ord a => [a] -> [(a, Int)]
+agruparEContar lista = 
+  let agrupados = groupBy (==) (sortBy compare lista)
+  in map (\grupo -> (head grupo, length grupo)) agrupados
+
+historicoPorItem :: [LogEntry] -> [String]
+historicoPorItem logs = 
+  let ids = concatMap extrairItemID logs
+      contagem = agruparEContar ids
+  in map (\(id, n) -> getID id ++ ": " ++ show n ++ " operacoes") contagem
+
+logsDeErro :: [LogEntry] -> [LogEntry]
+logsDeErro = filter ehErro
+  where 
+    ehErro (LogEntry _ _ _ (Falha _)) = True
+    ehErro _ = False
+
+itemMaisMovimentado :: [LogEntry] -> String
+itemMaisMovimentado logs = 
+  let ids = concatMap extrairItemID logs
+  in if null ids 
+     then "nenhum item registrado"
+     else 
+       let contagem = agruparEContar ids
+           (idMaisUsado, numOps) = maximumBy (comparing snd) contagem
+       in getID idMaisUsado ++ " com " ++ show numOps ++ " operacoes"
+
+loopPrincipal :: Inventario -> IO ()
+loopPrincipal inv = do
+  putStr "inventario> "
+  hFlush stdout
+  linha <- getLine
+  let palavras = parseComando linha
+  when (not (null palavras) && head palavras /= "sair") $ do
+    novoInv <- processarComando palavras inv
+    loopPrincipal novoInv
+
+main :: IO ()
+main = do
+  putStrLn "bem-vindo"
+  logs <- carregarLogs
+  let inv = reconstruirInventario logs
+  salvarInventario inv
+  putStrLn $ "itens: " ++ show (M.size inv)
+  putStrLn "comandos: add | remove | update | list | show | seed | report | sair"
+  loopPrincipal inv
