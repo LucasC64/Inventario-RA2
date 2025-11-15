@@ -1,4 +1,4 @@
-import Data.Map (Map)
+
 import qualified Data.Map as Map
 import Data.Time (UTCTime, getCurrentTime)
 import System.IO (hFlush, stdout)
