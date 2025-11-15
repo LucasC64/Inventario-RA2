@@ -3,7 +3,7 @@ import qualified Data.Map as Map
 import Data.Time (UTCTime, getCurrentTime)
 import System.IO (hFlush, stdout)
 import System.Directory (doesFileExist)
-import Control.Exception (catch, IOException)
+import Control.Exception (catch, IOException
 import Data.List (sortOn, group, maximumBy)
 import Data.Ord (comparing)
 import Data.Char (isSpace)
