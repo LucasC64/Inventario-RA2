@@ -23,7 +23,7 @@ data StatusLog = Sucesso | Falha String
 data LogEntry = LogEntry { timestamp :: UTCTime, evento :: Event, detalhes :: String, status :: StatusLog }
   deriving (Show, Read, Eq)
 
-type ResultadoOperacao = (Inventario, LogEntry)
+type ResultadoOperacao = (Inventario, LogEntry
 
 applyEvent :: Inventario -> Event -> Inventario
 applyEvent inv (EAdd i n q c) = Map.insert i (Item i n q c) inv
