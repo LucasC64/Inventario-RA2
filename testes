@@ -10,7 +10,6 @@ import Data.Char (isSpace)
 import Data.Maybe (mapMaybe)
 data Item = Item { itemID :: String, nome :: String, quantidade :: Int, categoria :: String }
   deriving (Show, Read, Eq)
-
 type Inventario = Map String Item
 
 data Event = EAdd String String Int String | ERemove String Int | EUpdate String Int
