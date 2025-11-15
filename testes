@@ -164,7 +164,5 @@ logsDeErro :: [LogEntry] -> [LogEntry]
 logsDeErro = filter (\l -> case status l of Falha _ -> True; _ -> False)
 
 itemMaisMovimentado :: [LogEntry] -> String
-itemMaisMovimentado logs = let ids = concatMap (\l -> case evento l of EAdd i _ _ _ -> [i]; ERemove i _ -> [i]; EUpdate i _ -> [i]) logs in if null ids then "nenhum" else let g = map (\grp -> (head grp, length grp)) . group . sortOn id $ ids; (i,c) = maximumBy (comparing snd) g in i ++ "(" ++ show c ++ ")"
-
-
+itemMaisMovimentado logs = let ids = concatMap (\l -> case evento l of EAdd i _ _ _ -> [i]; ERemove i _ -> [i]; EUpdate i _ -> [i]) logs in if null ids then "nenhum" else let g = map (\grp -> (head grp, lth grp)) . group . sortOn id $ ids; (i,c) = maximumBy (comparing snd) g in i ++ "(" ++ show c 
 
