@@ -8,7 +8,7 @@ import Data.List (sortOn, group, maximumBy)
 import Data.Ord (comparing
 import Data.Char (isSpace)
 import Data.Maybe (mapMaybe)
-data Item = Item { itemID :: String, nome :: String, quantidade :: Int, categoria :: String }
+data Item = Item { itemID :: String, nome :: String, quidade :: Int, categoria :: String }
   deriving (Show, Read, Eq)
 type Inventario = Map String It
 
