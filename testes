@@ -96,7 +96,7 @@ processarComando parts inv = do
   case parts of
     ("add":i:n:qParts) -> let qStr = headDef "" qParts; name = headDef "" [n]; cat = unwords (tailDef [] qParts) in
       case reads qStr of
-        [(q, "")] -> case addItem t i name q cat inv of
+        [(q, "")] -> case addItem t i name q cat inv o
           Right (inv', l) -> adicionarLog l >> salvarInventario inv' >> putStrLn "feito" >> return inv'
           Left err -> adicionarLog (criarLogFalha t (EAdd i name (readDef 0 qStr) cat) err) >> putStrLn ("falha:" ++ err) >> return inv
         _ -> putStrLn "falha:q" >> return inv
