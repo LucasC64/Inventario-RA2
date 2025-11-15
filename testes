@@ -39,7 +39,6 @@ addItem t i n q c inv
   | Map.member i inv = Left "existe"
   | q < 0 = Left "qneg"
   | otherwise = let ev = EAdd i n q c; inv' = applyEvent inv ev; l = LogEntry t ev ("+" ++ i) Sucesso in Right (inv', l)
-
 removeItem :: UTCTime -> String -> Int -> Inventario -> Either String ResultadoOperacao
 removeItem t i q inv
   | q <= 0 = Left "q<=0"
