@@ -51,7 +51,7 @@ updateQty t i q inv
   | q < 0 = Left "qneg"
   | otherwise =
     case Map.lookup i inv of
-      Nothing -> Left "nao-encontrado"
+      Nothing -> Left "nao-encontrado
       Just _ -> let ev = EUpdate i q; inv' = applyEvent inv ev; l = LogEntry t ev ("=" ++ i) Sucesso in Right (inv', l)
 
 reconstruirInventario :: [LogEntry] -> Inventario
