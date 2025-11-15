@@ -173,7 +173,7 @@ loop inv = do
   l <- getLine
   let p = tokenize l
   if null p || head p == "sair" then putStrLn "bye" else do
-    inv' <- processarComando p inv
+    inv' <- processarComando p 
     loop inv'
 
 main :: IO ()
