@@ -150,7 +150,7 @@ headDef d [] = d
 headDef _ (x:_) = x
 
 tailDef :: [a] -> [a] -> [a]
-tailDef d [] = d
+tailDef d [] =
 tailDef _ (_:xs) = xs
 
 readDef :: Read a => a -> String -> 
