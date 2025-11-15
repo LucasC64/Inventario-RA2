@@ -44,7 +44,7 @@ removeItem t i q inv
   | otherwise =
     case Map.lookup i inv of
       Nothing -> Left "nao-encontrado"
-      Just it -> if quantidade it < q then Left "estoque" else let ev = ERemove i q; inv' = applyEvent inv ev; l = LogEntry t ev ("-" ++ i) Sucesso in Right (inv', l)
+      Just it -> if quantidade it < q then Left "estoque" else let ev = ERemove i q;inv' = applyEvent inv ev; l = LogEntry t ev ("-" ++ i) Sucesso in Right (inv', l)
 updateQty :: UTCTime -> String -> Int -> Inventario -> Either String ResultadoOperacao
 updateQty t i q inv
   | q < 0 = Left "qneg"
