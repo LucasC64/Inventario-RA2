@@ -8,24 +8,15 @@ Online GDB (Haskell): https://www.onlinegdb.com/online_haskell_compiler
 
 Arquivos no repositório
 
-Inventario.hs — Haskel.
+- Inventario.hs — Haskell
+- Inventario.dat — (gerado pelo programa)
+- Auditoria.log — (gerado pelo programa)
 
-Inventario.dat — 
+Instruções rápidas
 
-Auditoria.log —
-Online GDB
+1. Abra o compilador Haskell online: https://www.onlinegdb.com/online_haskell_compiler  
+2. Cole o conteúdo de Inventario.hs.  
+3. Clique em Run.  
+4. Use o prompt inventario> para inserir comandos.
 
-Abra o compilador online de Haskell:
-https://www.onlinegdb.com/online_haskell_compiler
-
-Na página cole o conteúdo do arquivo Inventario.hs.
-
-Clique no botão Run para iniciar o programa.
-
-Comandos:
-add <id> <nome> <quantidade> <categoria>
-remove <id> <quantidade>
-update <id> <quantidade>
-list
-show <id>
-sair
+Comandos: add remove update list show seed report sair
