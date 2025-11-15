@@ -166,24 +166,5 @@ logsDeErro = filter (\l -> case status l of Falha _ -> True; _ -> False)
 itemMaisMovimentado :: [LogEntry] -> String
 itemMaisMovimentado logs = let ids = concatMap (\l -> case evento l of EAdd i _ _ _ -> [i]; ERemove i _ -> [i]; EUpdate i _ -> [i]) logs in if null ids then "nenhum" else let g = map (\grp -> (head grp, length grp)) . group . sortOn id $ ids; (i,c) = maximumBy (comparing snd) g in i ++ "(" ++ show c ++ ")"
 
-loop :: Inventario -> IO ()
-loop inv = do
-  putStr "> "
-  hFlush stdout
-  l <- getLine
-  let p = tokenize l
-  if null p || head p == "sair" then putStrLn "bye" else do
-    inv' <- processarComando p 
-    loop inv'
-
-main :: IO ()
-main = do
-  putStrLn "iniciando..."
-  logs <- carregarLogs
-  let inv = reconstruirInventario logs
-  salvarInventario inv
-  putStrLn ("itens:" ++ show (Map.size inv))
-  putStrLn "uso: add ID NOME QTD CAT | remove ID QTD update ID QTD | list | show ID | seed | report | sair"
-  loop inv
-
+lo
 
