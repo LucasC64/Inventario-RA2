@@ -21,3 +21,11 @@ https://www.onlinegdb.com/online_haskell_compiler
 Na página cole o conteúdo do arquivo Inventario.hs.
 
 Clique no botão Run para iniciar o programa.
+
+Comandos:
+add <id> <nome> <quantidade> <categoria>
+remove <id> <quantidade>
+update <id> <quantidade>
+list
+show <id>
+sair
