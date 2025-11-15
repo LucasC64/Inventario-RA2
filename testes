@@ -5,7 +5,7 @@ import System.IO (hFlush, stdout)
 import System.Directory (doesFileExist)
 import Control.Exception (catch, IOException
 import Data.List (sortOn, group, maximumBy)
-import Data.Ord (comparing)
+import Data.Ord (comparing
 import Data.Char (isSpace)
 import Data.Maybe (mapMaybe)
 
